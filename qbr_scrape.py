@@ -90,12 +90,16 @@ for yr in range(2004, 2022):
         data = r.json()
         if (data != None and len(data) != 0):
             print(f"Found QBR data for year {yr}, week {wk}, parsing")
-            qbr_dict = process_qbr_json(data, yr, wk)
-            qbr_df = pd.DataFrame(qbr_dict)
-            # write(qbr_df, f"qbr/{yr}/{wk}.csv")
-            parent_qbr_df = parent_qbr_df.append(qbr_df)
-            # save it
-            # print(qbr_dict)
+            qbr_rec = process_qbr_json(data, yr, wk)
+            if (len(qbr_rec) > 0):
+                print(f"cleaned {len(qbr_rec)} records for {yr}, week {wk}, adding to composite")
+                qbr_df = pd.DataFrame(qbr_rec)
+                # write(qbr_df, f"qbr/{yr}/{wk}.csv")
+                parent_qbr_df = parent_qbr_df.append(qbr_df)
+                # save it
+                # print(qbr_dict)
+            else:
+                print(f"No records for {yr}, week {wk}, skipping")
         else:
             print(f"QBR Data not found for year {yr} and week {wk}")
     print(f"Done with year {yr}")
