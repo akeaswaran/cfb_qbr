@@ -125,6 +125,24 @@ calibration_results <- clean_model_data %>%
     )
 mean(abs(calibration_results$bin_pred_qbr - calibration_results$bin_actual_qbr))
 
+ann_text <- data.frame(
+    x = c(25, 75), y = c(75, 25),
+    lab = c("Higher\nthan expected", "Lower\nthan expected")
+)
+
+ggplot(calibration_results, aes(bin_pred_qbr, bin_actual_qbr)) +
+    geom_point(aes(x = bin_pred_qbr, y = bin_actual_qbr, size = total_instances)) +
+    geom_smooth(aes(x = bin_pred_qbr, y = bin_actual_qbr), method = "loess") +
+    geom_abline(slope = 1, intercept = 0, color = "black", lty = 2) +
+    coord_equal() +
+    labs(
+        size = "Number of passers",
+        x = "Estimated QBR",
+        y = "Observed QBR"
+    ) +
+    geom_text(data = ann_text, aes(x = x, y = y, label = lab), size = 5) +
+    theme_bw()
+
 clean_model_data %>%
     select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, TQBR, raw_qbr, exp_qbr) %>%
     arrange(season, week) %>%
