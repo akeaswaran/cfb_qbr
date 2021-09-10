@@ -13,20 +13,20 @@ progressr::with_progress({
 cleaned <- pbp %>%
     filter(!is.na(EPA) & !is.na(home_wp_before)) %>%
     filter(season %in% seasons) %>%
-    select(season, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag) %>%
+    select(season, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag, pass_attempt) %>%
     mutate(
         home_wp = home_wp_before,
         qbr_epa = if_else(EPA < -5.0, -5.0, EPA),
         qbr_epa = if_else(fumble_vec == 1, -3.5, qbr_epa),
         weight = if_else(home_wp < .1 | home_wp > .9, .6, 1),
         weight = if_else((home_wp >= .1 & home_wp < .2) | (home_wp >= .8 & home_wp < .9), .9, weight),
-        non_fumble_sack = ((grepl(" sack", play_text) == TRUE) & (fumble_vec == 0)),
+        non_fumble_sack = ((sack == 1) & (fumble_vec == 0)),
         sack_epa = if_else(non_fumble_sack, qbr_epa, NaN),
         sack_weight = if_else(non_fumble_sack, weight, NaN),
-        pass_epa = if_else((pass == 1), qbr_epa, NaN),
-        pass_weight = if_else((pass == 1), weight, NaN),
-        rush_epa = if_else((rush == 1), qbr_epa, NaN),
-        rush_weight = if_else((rush == 1), weight, NaN),
+        pass_epa = if_else(((pass_attempt == 1) & (sack == 0)), qbr_epa, NaN),
+        pass_weight = if_else(((pass_attempt == 1) & (sack == 0)), weight, NaN),
+        rush_epa = if_else((rush == 1) & (sack == 0), qbr_epa, NaN),
+        rush_weight = if_else((rush == 1) & (sack == 0), weight, NaN),
         pen_epa = if_else((penalty_flag == 1), qbr_epa, NaN),
         pen_weight = if_else((penalty_flag == 1), weight, NaN),
         action_play = (EPA != 0),
@@ -43,11 +43,11 @@ qb_week <- cleaned %>%
     summarize(
         total_plays = n(),
         action_plays = sum(action_play),
-        qbr_epa = weighted.mean(qbr_epa, weight),
-        sack_epa = weighted.mean(sack_epa, sack_weight),
-        pass_epa = weighted.mean(pass_epa, pass_weight),
-        rush_epa = weighted.mean(rush_epa, rush_weight),
-        pen_epa = weighted.mean(pen_epa, pen_weight)
+        qbr_epa = weighted.mean(qbr_epa, weight, na.rm = TRUE),
+        sack_epa = weighted.mean(sack_epa, sack_weight, na.rm = TRUE),
+        pass_epa = weighted.mean(pass_epa, pass_weight, na.rm = TRUE),
+        rush_epa = weighted.mean(rush_epa, rush_weight, na.rm = TRUE),
+        pen_epa = weighted.mean(pen_epa, pen_weight, na.rm = TRUE)
     ) %>%
     mutate(
         qbr_epa = replace_na(qbr_epa, 0),
@@ -68,7 +68,7 @@ model_data <- qb_week %>%
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
-nrounds <- 25
+nrounds <- 20
 params <-
     list(
         booster = "gbtree",
@@ -171,3 +171,13 @@ model_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = clean_model_dat
 )
 xgb_qbr_model <- xgboost::xgboost(params = params, data = model_train, nrounds = nrounds, verbose = 2)
 xgb.save(xgb_qbr_model, "./qbr_model.model")
+
+# add vars to model data and push csv
+model_data <- model_data %>%
+    ungroup()
+model_data$exp_qbr <- matrix(predict(xgb_qbr_model, as.matrix(model_data %>% select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa))))
+
+model_data %>%
+    select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, raw_qbr, exp_qbr) %>%
+    rename(team = team_abbreviation) %>%
+    write.csv("xqbr_xgb.csv")
