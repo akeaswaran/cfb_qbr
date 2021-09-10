@@ -84,7 +84,7 @@ def write(df, path):
     df.to_csv(path, index=False)
 
 parent_qbr_df = pd.DataFrame()
-for yr in range(2004, 2021):
+for yr in range(2004, 2022):
     for wk in range(-1, 16):
         seasontype = 3 if (wk == -1) else 2
         adjWk = 1 if (wk == -1) else wk
