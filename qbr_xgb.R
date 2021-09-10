@@ -111,7 +111,7 @@ cv_results <- map_dfr(seasons, function(x) {
 
 # ------ END XGB METHOD ------
 #
-
+# LOSO Calibration
 show_calibration_chart <- function(bin_size) {
     calibration_results <- cv_results %>%
         # Create BINS for wp:
@@ -164,3 +164,10 @@ show_calibration_chart <- function(bin_size) {
         theme_bw()
 }
 show_calibration_chart(bin_size = 5.0)
+
+# compose final model to save
+model_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = clean_model_data %>% select(-season, -label, -raw_qbr)),
+    label = clean_model_data$label
+)
+xgb_qbr_model <- xgboost::xgboost(params = params, data = model_train, nrounds = nrounds, verbose = 2)
+xgb.save(xgb_qbr_model, "./qbr_model.model")
