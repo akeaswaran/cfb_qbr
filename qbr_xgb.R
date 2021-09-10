@@ -163,10 +163,4 @@ show_calibration_chart <- function(bin_size) {
         geom_text(data = cal_text, aes(x = x, y = y, label = lab), size = 3) +
         theme_bw()
 }
-show_calibration_chart(bin_size = 2.5)
-
-clean_model_data %>%
-    select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, TQBR, raw_qbr, exp_qbr) %>%
-    arrange(season, week) %>%
-    rename(team = team_abbreviation) %>%
-    write.csv("xqbr_xgb.csv", row.names=FALSE)
+show_calibration_chart(bin_size = 5.0)
