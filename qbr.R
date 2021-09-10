@@ -27,7 +27,7 @@ qb_week <- cleaned %>%
   summarize(qbr_epa = weighted.mean(qbr_epa, weight))
 
 qbr_scrape <- read.csv("./composite.csv") %>%
-  rename(raw_qbr = TQBR)
+  rename(raw_qbr = QBR)
 
 j <- qb_week %>%
   left_join(qbr_scrape, by = c('passer_player_name' = 'athlete_name', 'week' = 'week', 'season' = 'year')) %>%
@@ -35,7 +35,18 @@ j <- qb_week %>%
 
 cor(j$qbr_epa, j$raw_qbr, use = 'complete.obs')
 
-qbr_model <- mgcv::gam(raw_qbr ~ s(qbr_epa),
-                 data=j, method="REML")
+qbr_model <- mgcv::gam(raw_qbr ~ s(qbr_epa), data=j, method="REML")
 
 save(qbr_model, file = './qbr_model.rda')
+
+preds <- predict(qbr_model, j)
+j$xqbr <- preds
+cor(j$raw_qbr, j$xqbr, use = 'complete.obs')
+
+mean(abs(j$raw_qbr - j$xqbr))
+
+j %>%
+  select(season, week, passer_player_name, qbr_epa, TQBR, raw_qbr, xqbr) %>%
+  arrange(season, week) %>%
+  rename(adj_qbr = TQBR) %>%
+  write.csv("xqbr.csv", row.names=FALSE)
