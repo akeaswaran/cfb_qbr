@@ -51,7 +51,7 @@ def retrieve_team_name(year, teamId):
 
 def process_qbr_json(json, year, week):
     if ("items" not in json.keys()):
-        return dict()
+        return []
     
     qbr_records = json["items"]
     for record in qbr_records:
