@@ -1,3 +1,9 @@
+# CFB QBR Downloader
+# By: Akshay Easwaran <akeaswaran@me.com>
+# 
+# Big thanks to @nntrn for the gist for NFL QBR data: https://gist.github.com/nntrn/ee26cb2a0716de0947a0a4e9a157bc1c#athletes
+
+
 import requests
 import pandas as pd
 import os
