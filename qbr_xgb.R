@@ -23,10 +23,10 @@ cleaned <- pbp %>%
         non_fumble_sack = ((sack == 1) & (fumble_vec == 0)),
         sack_epa = if_else(non_fumble_sack, qbr_epa, NaN),
         sack_weight = if_else(non_fumble_sack, weight, NaN),
-        pass_epa = if_else(((pass_attempt == 1) & (sack == 0)), qbr_epa, NaN),
-        pass_weight = if_else(((pass_attempt == 1) & (sack == 0)), weight, NaN),
-        rush_epa = if_else((rush == 1) & (sack == 0), qbr_epa, NaN),
-        rush_weight = if_else((rush == 1) & (sack == 0), weight, NaN),
+        pass_epa = if_else((pass == 1), qbr_epa, NaN),
+        pass_weight = if_else((pass == 1), weight, NaN),
+        rush_epa = if_else((rush == 1), qbr_epa, NaN),
+        rush_weight = if_else((rush == 1), weight, NaN),
         pen_epa = if_else((penalty_flag == 1), qbr_epa, NaN),
         pen_weight = if_else((penalty_flag == 1), weight, NaN),
         action_play = (EPA != 0),
@@ -68,7 +68,7 @@ model_data <- qb_week %>%
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
-nrounds <- 20
+nrounds <- 25
 params <-
     list(
         booster = "gbtree",
