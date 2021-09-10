@@ -10,9 +10,9 @@ progressr::with_progress({
 })
 
 cleaned <- pbp %>%
-    filter(!is.na(passer_player_name) & !is.na(EPA) & !is.na(home_wp_before)) %>%
+    filter(!is.na(EPA) & !is.na(home_wp_before)) %>%
     filter(season %in% seasons) %>%
-    select(season, play_text, week, rush, pass, passer_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag) %>%
+    select(season, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag) %>%
     mutate(
         home_wp = home_wp_before,
         qbr_epa = if_else(EPA < -5.0, -5.0, EPA),
@@ -29,10 +29,16 @@ cleaned <- pbp %>%
         pen_epa = if_else((penalty_flag == 1), qbr_epa, NaN),
         pen_weight = if_else((penalty_flag == 1), weight, NaN),
         action_play = (EPA != 0),
+        athlete_name = case_when(
+            !is.na(passer_player_name) ~ passer_player_name,
+            !is.na(rusher_player_name) ~ rusher_player_name,
+            TRUE ~ "NA"
+        )
     )
 
 qb_week <- cleaned %>%
-    group_by(passer_player_name, season, week) %>%
+    filter(athlete_name != "NA") %>%
+    group_by(athlete_name, season, week) %>%
     summarize(
         total_plays = n(),
         action_plays = sum(action_play),
@@ -54,8 +60,8 @@ qbr_scrape <- read.csv("./composite_qbr.csv") %>%
     filter(season_type == 2) %>%
     rename(raw_qbr = QBR)
 
-j <- qb_week %>%
-    left_join(qbr_scrape, by = c('passer_player_name' = 'athlete_name', 'week' = 'week', 'season' = 'season')) %>%
+model_data <- qb_week %>%
+    left_join(qbr_scrape, by = c('athlete_name' = 'athlete_name', 'week' = 'week', 'season' = 'season')) %>%
     filter(!is.na(raw_qbr))
 
 # ------ START XGB METHOD ------
@@ -75,12 +81,16 @@ params <-
         min_child_weight = 1
     )
 
-test_data <- j %>%
+clean_model_data <- model_data %>%
+    mutate(label = raw_qbr) %>%
+    ungroup()
+
+test_data <- model_data %>%
     filter(season == 2021) %>%
     mutate(label = raw_qbr) %>%
     ungroup() %>%
     select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, label)
-train_data <- j %>%
+train_data <- model_data %>%
     filter(season != 2020) %>%
     mutate(label = raw_qbr) %>%
     ungroup() %>%
@@ -91,10 +101,32 @@ full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% s
 )
 xgb_qbr_model <- xgboost::xgboost(params = params, data = full_train, nrounds = nrounds, verbose = 2)
 
-full_test <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = test_data %>% select(-label)),
-                                  label = test_data$label
+test_model_data <- clean_model_data %>% select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, label)
+
+full_test <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = test_model_data %>% select(-label)),
+                                  label = test_model_data$label
 )
 preds <- predict(xgb_qbr_model, full_test)
-test_data$exp_qbr <- preds
+clean_model_data$exp_qbr <- preds
 
 # ------ END XGB METHOD ------
+#
+
+calibration_results <- clean_model_data %>%
+    # Create BINS for wp:
+    mutate(
+        bin_pred_qbr = round(exp_qbr / 2.5) * 2.5,
+    ) %>%
+    group_by(bin_pred_qbr) %>%
+    summarize(
+        total_instances = n(),
+        avg_qbr = mean(raw_qbr),
+        bin_actual_qbr = round(avg_qbr / 2.5) * 2.5
+    )
+mean(abs(calibration_results$bin_pred_qbr - calibration_results$bin_actual_qbr))
+
+clean_model_data %>%
+    select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, TQBR, raw_qbr, exp_qbr) %>%
+    arrange(season, week) %>%
+    rename(team = team_abbreviation) %>%
+    write.csv("xqbr_xgb.csv", row.names=FALSE)
