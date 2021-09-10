@@ -11,15 +11,15 @@ import os
 base_lang_suffix = "?lang=en&region=us"
 
 def generate_qbr_url(year, week):
-    return f"http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/types/2/weeks/{week}/qbr/10000"
+    return f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/types/2/weeks/{week}/qbr/10000?limit=1000"
 
 def generate_athlete_prefix(year):
-    return f"http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/athletes/"
+    return f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/athletes/"
 
 def generate_team_prefix(year):
-    return f"http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/teams/"
+    return f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/teams/"
 
-event_prefix = "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/"
+event_prefix = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/"
 
 athlete_name_map = dict()
 def retrieve_athlete_name(year, athleteId):
@@ -42,7 +42,7 @@ def retrieve_team_name(year, teamId):
         return team_map[teamId]
     
     print(f"no cached name for team {teamId}, polling espn")
-    url = f"http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/teams/{teamId}?lang=en&region=us"
+    url = f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/teams/{teamId}?lang=en&region=us"
     r = requests.get(url)
     data = r.json()
     name = data["abbreviation"]
