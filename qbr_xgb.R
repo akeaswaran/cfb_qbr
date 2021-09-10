@@ -1,6 +1,7 @@
 library(cfbfastR)
 library(tidyverse)
 library(xgboost)
+library(glue)
 
 pbp <- data.frame()
 seasons <- 2014:2021
@@ -67,7 +68,7 @@ model_data <- qb_week %>%
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
-nrounds <- 100
+nrounds <- 25
 params <-
     list(
         booster = "gbtree",
@@ -83,65 +84,86 @@ params <-
 
 clean_model_data <- model_data %>%
     mutate(label = raw_qbr) %>%
-    ungroup()
-
-test_data <- model_data %>%
-    filter(season == 2021) %>%
-    mutate(label = raw_qbr) %>%
     ungroup() %>%
-    select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, label)
-train_data <- model_data %>%
-    filter(season != 2020) %>%
-    mutate(label = raw_qbr) %>%
-    ungroup() %>%
-    select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, label)
+    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, raw_qbr, label)
 
-full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label)),
-                                   label = train_data$label
-)
-xgb_qbr_model <- xgboost::xgboost(params = params, data = full_train, nrounds = nrounds, verbose = 2)
+cv_results <- map_dfr(seasons, function(x) {
+    test_data <- clean_model_data %>%
+        filter(season == x) %>%
+        select(-season)
+    train_data <- clean_model_data %>%
+        filter(season != x) %>%
+        select(-season)
 
-test_model_data <- clean_model_data %>% select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, label)
+    full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -raw_qbr)),
+                                       label = train_data$label
+    )
+    xgb_model <- xgboost::xgboost(params = params, data = full_train, nrounds = nrounds, verbose = 2)
 
-full_test <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = test_model_data %>% select(-label)),
-                                  label = test_model_data$label
-)
-preds <- predict(xgb_qbr_model, full_test)
-clean_model_data$exp_qbr <- preds
+    preds <- as.data.frame(
+        matrix(predict(xgb_model, as.matrix(test_data %>% select(-label, -raw_qbr))))
+    ) %>%
+        dplyr::rename(exp_qbr = V1)
+
+    cv_data <- bind_cols(test_data, preds) %>% mutate(season = x)
+    return(cv_data)
+})
 
 # ------ END XGB METHOD ------
 #
 
-calibration_results <- clean_model_data %>%
-    # Create BINS for wp:
-    mutate(
-        bin_pred_qbr = round(exp_qbr / 2.5) * 2.5,
-    ) %>%
-    group_by(bin_pred_qbr) %>%
-    summarize(
-        total_instances = n(),
-        avg_qbr = mean(raw_qbr),
-        bin_actual_qbr = round(avg_qbr / 2.5) * 2.5
+show_calibration_chart <- function(bin_size) {
+    calibration_results <- cv_results %>%
+        # Create BINS for wp:
+        mutate(
+            bin_pred_qbr = round(exp_qbr / bin_size) * bin_size,
+        ) %>%
+        group_by(bin_pred_qbr) %>%
+        summarize(
+            total_instances = n(),
+            min_raw_qbr = min(raw_qbr),
+            max_raw_qbr = max(raw_qbr),
+            avg_qbr = mean(raw_qbr),
+            bin_actual_qbr = round(avg_qbr / bin_size) * bin_size,
+            min_exp_qbr = min(exp_qbr),
+            max_exp_qbr = max(exp_qbr),
+        )
+
+    cal_error <- calibration_results %>%
+        ungroup() %>%
+        mutate(cal_diff = abs(bin_pred_qbr - bin_actual_qbr)) %>%
+        summarize(
+            weight_cal_error = weighted.mean(cal_diff, total_instances, na.rm = TRUE)
+        )
+
+    ann_text <- data.frame(
+        x = c(25, 75),
+        y = c(75, 25),
+        lab = c("Higher\nthan expected", "Lower\nthan expected")
     )
-mean(abs(calibration_results$bin_pred_qbr - calibration_results$bin_actual_qbr))
 
-ann_text <- data.frame(
-    x = c(25, 75), y = c(75, 25),
-    lab = c("Higher\nthan expected", "Lower\nthan expected")
-)
+    cal_text <- data.frame(
+        x = c(87.5),
+        y = c(0),
+        lab = c(glue("Wgt Cal Error: {round(cal_error$weight_cal_error, 4)}"))
+    )
 
-ggplot(calibration_results, aes(bin_pred_qbr, bin_actual_qbr)) +
-    geom_point(aes(x = bin_pred_qbr, y = bin_actual_qbr, size = total_instances)) +
-    geom_smooth(aes(x = bin_pred_qbr, y = bin_actual_qbr), method = "loess") +
-    geom_abline(slope = 1, intercept = 0, color = "black", lty = 2) +
-    coord_equal() +
-    labs(
-        size = "Number of passers",
-        x = "Estimated QBR",
-        y = "Observed QBR"
-    ) +
-    geom_text(data = ann_text, aes(x = x, y = y, label = lab), size = 5) +
-    theme_bw()
+    ggplot(calibration_results, aes(bin_pred_qbr, bin_actual_qbr)) +
+        geom_point(aes(x = bin_pred_qbr, y = bin_actual_qbr, size = total_instances)) +
+        geom_smooth(aes(x = bin_pred_qbr, y = bin_actual_qbr), method = "loess") +
+        geom_abline(slope = 1, intercept = 0, color = "black", lty = 2) +
+        coord_equal() +
+        labs(
+            size = "Number of passers",
+            x = "Estimated QBR",
+            y = "Observed QBR",
+            title = glue("Calibrating xQBR with bin size {bin_size}")
+        ) +
+        geom_text(data = ann_text, aes(x = x, y = y, label = lab), size = 5) +
+        geom_text(data = cal_text, aes(x = x, y = y, label = lab), size = 3) +
+        theme_bw()
+}
+show_calibration_chart(bin_size = 2.5)
 
 clean_model_data %>%
     select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, TQBR, raw_qbr, exp_qbr) %>%
