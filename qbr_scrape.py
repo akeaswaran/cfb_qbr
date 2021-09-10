@@ -14,12 +14,12 @@ def generate_qbr_url(year, week):
     return f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/types/2/weeks/{week}/qbr/10000?limit=1000"
 
 def generate_athlete_prefix(year):
-    return f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/athletes/"
+    return f"http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/athletes/"
 
 def generate_team_prefix(year):
-    return f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/teams/"
+    return f"http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/teams/"
 
-event_prefix = "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/"
+event_prefix = "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/"
 
 athlete_name_map = dict()
 def retrieve_athlete_name(year, athleteId):
