@@ -46,7 +46,7 @@ cor(j$raw_qbr, j$xqbr, use = 'complete.obs')
 mean(abs(j$raw_qbr - j$xqbr))
 
 j %>%
-  select(season, week, passer_player_name, qbr_epa, TQBR, raw_qbr, xqbr) %>%
+  select(season, week, passer_player_name, team_id, team_abbreviation, qbr_epa, TQBR, raw_qbr, xqbr) %>%
   arrange(season, week) %>%
-  rename(adj_qbr = TQBR) %>%
+  rename(adj_qbr = TQBR, team = team_abbreviation) %>%
   write.csv("xqbr.csv", row.names=FALSE)
