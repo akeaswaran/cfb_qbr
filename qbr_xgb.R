@@ -163,7 +163,7 @@ show_calibration_chart <- function(bin_size) {
         geom_text(data = cal_text, aes(x = x, y = y, label = lab), size = 3) +
         theme_bw()
 }
-show_calibration_chart(bin_size = 5.0)
+show_calibration_chart(bin_size = 2.5)
 
 # compose final model to save
 model_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = clean_model_data %>% select(-season, -label, -raw_qbr)),
