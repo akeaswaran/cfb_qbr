@@ -26,11 +26,12 @@ qb_week <- cleaned %>%
   group_by(passer_player_name, season, week) %>%
   summarize(qbr_epa = weighted.mean(qbr_epa, weight))
 
-qbr_scrape <- read.csv("./composite.csv") %>%
+qbr_scrape <- read.csv("./composite_qbr.csv") %>%
+  filter(season_type == 2) %>%
   rename(raw_qbr = QBR)
 
 j <- qb_week %>%
-  left_join(qbr_scrape, by = c('passer_player_name' = 'athlete_name', 'week' = 'week', 'season' = 'year')) %>%
+  left_join(qbr_scrape, by = c('passer_player_name' = 'athlete_name', 'week' = 'week', 'season' = 'season')) %>%
   filter(!is.na(raw_qbr))
 
 cor(j$qbr_epa, j$raw_qbr, use = 'complete.obs')
@@ -46,7 +47,7 @@ cor(j$raw_qbr, j$xqbr, use = 'complete.obs')
 mean(abs(j$raw_qbr - j$xqbr))
 
 j %>%
-  select(season, week, passer_player_name, team_id, team_abbreviation, qbr_epa, TQBR, raw_qbr, xqbr) %>%
+  select(season, week, passer_player_name, team_abbreviation, opponent, qbr_epa, TQBR, raw_qbr, xqbr) %>%
   arrange(season, week) %>%
-  rename(adj_qbr = TQBR, team = team_abbreviation) %>%
+  rename(adj_qbr = TQBR, team = team_abbreviation, exp_qbr = xqbr) %>%
   write.csv("xqbr.csv", row.names=FALSE)
