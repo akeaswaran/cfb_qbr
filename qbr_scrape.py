@@ -28,7 +28,7 @@ def retrieve_athlete_name(year, athleteId):
         return athlete_name_map[athleteId]
     
     print(f"no cached name for athlete {athleteId}, polling espn")
-    url = f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/athletes/{athleteId}"
+    url = f"https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/athletes/{athleteId}?lang=en&region=us"
     r = requests.get(url)
     data = r.json()
     name = data["fullName"]
