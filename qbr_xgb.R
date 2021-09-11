@@ -13,14 +13,14 @@ progressr::with_progress({
 cleaned <- pbp %>%
     filter(!is.na(EPA) & !is.na(home_wp_before)) %>%
     filter(season %in% seasons) %>%
-    select(season, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag, pass_attempt) %>%
+    select(season, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag, pass_attempt, sack_vec) %>%
     mutate(
         home_wp = home_wp_before,
         qbr_epa = if_else(EPA < -5.0, -5.0, EPA),
         qbr_epa = if_else(fumble_vec == 1, -3.5, qbr_epa),
         weight = if_else(home_wp < .1 | home_wp > .9, .6, 1),
         weight = if_else((home_wp >= .1 & home_wp < .2) | (home_wp >= .8 & home_wp < .9), .9, weight),
-        non_fumble_sack = ((sack == 1) & (fumble_vec == 0)),
+        non_fumble_sack = ((sack_vec == 1) & (fumble_vec == 0)),
         sack_epa = if_else(non_fumble_sack, qbr_epa, NaN),
         sack_weight = if_else(non_fumble_sack, weight, NaN),
         pass_epa = if_else((pass == 1), qbr_epa, NaN),
@@ -161,9 +161,12 @@ show_calibration_chart <- function(bin_size) {
         ) +
         geom_text(data = ann_text, aes(x = x, y = y, label = lab), size = 5) +
         geom_text(data = cal_text, aes(x = x, y = y, label = lab), size = 3) +
+        xlim(0, 100) +
+        ylim(0, 100) +
         theme_bw()
 }
 show_calibration_chart(bin_size = 2.5)
+show_calibration_chart(bin_size = 5.0)
 
 # compose final model to save
 model_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = clean_model_data %>% select(-season, -label, -raw_qbr)),
