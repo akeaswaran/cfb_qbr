@@ -108,6 +108,15 @@ cv_results <- map_dfr(seasons, function(x) {
     cv_data <- bind_cols(test_data, preds) %>% mutate(season = x)
     return(cv_data)
 })
+rsq <- function (x, y) {
+    return(round(cor(x, y) ^ 2, 4))
+}
+
+r2w <- function(y, y_pred, w) {
+    # Calculate R2 using the correlation coefficient method
+    xy = cbind(y, y_pred)
+    return(boot::corr(d=xy, w=w) ^ 2)
+}
 
 # ------ END XGB METHOD ------
 #
@@ -121,12 +130,15 @@ show_calibration_chart <- function(bin_size) {
         group_by(bin_pred_qbr) %>%
         summarize(
             total_instances = n(),
-            min_raw_qbr = min(raw_qbr),
-            max_raw_qbr = max(raw_qbr),
+            # min_raw_qbr = min(raw_qbr),
+            # max_raw_qbr = max(raw_qbr),
             avg_qbr = mean(raw_qbr),
-            bin_actual_qbr = round(avg_qbr / bin_size) * bin_size,
-            min_exp_qbr = min(exp_qbr),
-            max_exp_qbr = max(exp_qbr),
+            # bin_actual_qbr = round(avg_qbr / bin_size) * bin_size,
+            # min_exp_qbr = min(exp_qbr),
+            # max_exp_qbr = max(exp_qbr),
+        ) %>%
+        mutate(
+            bin_actual_qbr = avg_qbr # cheating to not change a ton of code
         )
 
     cal_error <- calibration_results %>%
@@ -139,13 +151,15 @@ show_calibration_chart <- function(bin_size) {
     ann_text <- data.frame(
         x = c(25, 75),
         y = c(75, 25),
-        lab = c("Higher\nthan expected", "Lower\nthan expected")
+        lab = c("Higher\nthan predicted", "Lower\nthan predicted")
     )
+
+    r2 <- r2w(calibration_results$bin_actual_qbr, calibration_results$bin_pred_qbr, calibration_results$total_instances)
 
     cal_text <- data.frame(
         x = c(87.5),
         y = c(0),
-        lab = c(glue("Wgt Cal Error: {round(cal_error$weight_cal_error, 4)}"))
+        lab = c(glue("Wgt Cal Error: {round(cal_error$weight_cal_error, 4)}\nWgt R^2: {round(r2, 4)}"))
     )
 
     ggplot(calibration_results, aes(bin_pred_qbr, bin_actual_qbr)) +
@@ -155,8 +169,8 @@ show_calibration_chart <- function(bin_size) {
         coord_equal() +
         labs(
             size = "Number of passers",
-            x = "Estimated QBR",
-            y = "Observed QBR",
+            x = "Expected QBR",
+            y = "Actual QBR",
             title = glue("Calibrating xQBR with bin size {bin_size}")
         ) +
         geom_text(data = ann_text, aes(x = x, y = y, label = lab), size = 5) +
