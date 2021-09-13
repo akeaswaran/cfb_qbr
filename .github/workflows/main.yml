@@ -18,6 +18,6 @@ jobs:
           - name: Push last_updated file
             uses: test-room-7/action-update-file@v1.5.0
             with:
-              file-path: composite.csv
+              file-path: composite_qbr.csv
               commit-msg: "Updated QBR composite CSV after latest bot run."
               github-token: ${{ secrets.GITHUB_TOKEN }}
