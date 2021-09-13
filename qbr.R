@@ -95,7 +95,7 @@ show_calibration_chart <- function(bin_size) {
   ann_text <- data.frame(
     x = c(25, 75),
     y = c(75, 25),
-    lab = c("Higher\nthan expected", "Lower\nthan expected")
+    lab = c("Higher\nthan predicted", "Lower\nthan predicted")
   )
 
   r2 <- r2w(calibration_results$bin_actual_qbr, calibration_results$bin_pred_qbr, calibration_results$total_instances)
@@ -113,8 +113,8 @@ show_calibration_chart <- function(bin_size) {
     coord_equal() +
     labs(
       size = "Number of passers",
-      x = "Estimated QBR",
-      y = "Observed QBR",
+      x = "Expected QBR",
+      y = "Actual QBR",
       title = glue("Calibrating xQBR with bin size {bin_size}")
     ) +
     geom_text(data = ann_text, aes(x = x, y = y, label = lab), size = 5) +
@@ -123,4 +123,4 @@ show_calibration_chart <- function(bin_size) {
     ylim(0, 100) +
     theme_bw()
 }
-show_calibration_chart(bin_size = 5.0)
+show_calibration_chart(bin_size = 2.5)
