@@ -10,10 +10,27 @@ progressr::with_progress({
     pbp <- cfbfastR::load_cfb_pbp(seasons)
 })
 
+spreads <- data.frame()
+for (yr in seasons) {
+    for (wk in 1:16) {
+        tmp <- cfbd_betting_lines(year = yr, week = wk)
+        spreads <- rbind(spreads, tmp)
+    }
+}
+
+spreads <- spreads %>%
+    group_by(game_id) %>%
+    mutate(
+        home_team_spread = -1 * as.double(spread)
+    ) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    select(game_id, home_team_spread)
+
 cleaned <- pbp %>%
     filter(!is.na(EPA) & !is.na(home_wp_before)) %>%
     filter(season %in% seasons) %>%
-    select(season, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag, pass_attempt, sack_vec) %>%
+    select(season, game_id, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag, pass_attempt, sack_vec, home, away, pos_team) %>%
     mutate(
         home_wp = home_wp_before,
         qbr_epa = if_else(EPA < -5.0, -5.0, EPA),
@@ -37,7 +54,15 @@ cleaned <- pbp %>%
         )
     )
 
-qb_week <- cleaned %>%
+base_qb_week <- cleaned %>%
+    left_join(spreads, by = c('game_id' = 'game_id')) %>%
+    filter(!is.na(home_team_spread)) %>%
+    mutate(
+        pos_team_spread = ifelse(home == pos_team, home_team_spread, -1 * home_team_spread),
+        opponent = ifelse(home == pos_team, away, home)
+    )
+
+qb_week <- base_qb_week %>%
     filter(athlete_name != "NA") %>%
     group_by(athlete_name, season, week) %>%
     summarize(
@@ -47,7 +72,10 @@ qb_week <- cleaned %>%
         sack_epa = weighted.mean(sack_epa, sack_weight, na.rm = TRUE),
         pass_epa = weighted.mean(pass_epa, pass_weight, na.rm = TRUE),
         rush_epa = weighted.mean(rush_epa, rush_weight, na.rm = TRUE),
-        pen_epa = weighted.mean(pen_epa, pen_weight, na.rm = TRUE)
+        pen_epa = weighted.mean(pen_epa, pen_weight, na.rm = TRUE),
+        spread = first(pos_team_spread),
+        game_id = first(game_id),
+        opponent = first(opponent)
     ) %>%
     mutate(
         qbr_epa = replace_na(qbr_epa, 0),
@@ -59,12 +87,11 @@ qb_week <- cleaned %>%
 
 qbr_scrape <- read.csv("./composite_qbr.csv") %>%
     filter(season_type == 2) %>%
-    rename(raw_qbr = QBR)
+    rename(raw_qbr = QBR, adj_qbr = TQBR)
 
 model_data <- qb_week %>%
-    left_join(qbr_scrape, by = c('athlete_name' = 'athlete_name', 'week' = 'week', 'season' = 'season')) %>%
-    filter(!is.na(raw_qbr))
-
+    left_join(qbr_scrape, by = c('game_id' = 'game_id', 'athlete_name' = 'athlete_name', 'week' = 'week', 'season' = 'season')) %>%
+    filter(!is.na(raw_qbr) & !is.na(adj_qbr))
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
@@ -83,9 +110,9 @@ params <-
     )
 
 clean_model_data <- model_data %>%
-    mutate(label = raw_qbr) %>%
+    mutate(label = adj_qbr) %>%
     ungroup() %>%
-    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, raw_qbr, label)
+    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, spread, adj_qbr, label)
 
 cv_results <- map_dfr(seasons, function(x) {
     test_data <- clean_model_data %>%
@@ -95,13 +122,13 @@ cv_results <- map_dfr(seasons, function(x) {
         filter(season != x) %>%
         select(-season)
 
-    full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -raw_qbr)),
+    full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -adj_qbr)),
                                        label = train_data$label
     )
     xgb_model <- xgboost::xgboost(params = params, data = full_train, nrounds = nrounds, verbose = 2)
 
     preds <- as.data.frame(
-        matrix(predict(xgb_model, as.matrix(test_data %>% select(-label, -raw_qbr))))
+        matrix(predict(xgb_model, as.matrix(test_data %>% select(-label, -adj_qbr))))
     ) %>%
         dplyr::rename(exp_qbr = V1)
 
@@ -132,7 +159,7 @@ show_calibration_chart <- function(bin_size) {
             total_instances = n(),
             # min_raw_qbr = min(raw_qbr),
             # max_raw_qbr = max(raw_qbr),
-            avg_qbr = mean(raw_qbr),
+            avg_qbr = mean(adj_qbr),
             # bin_actual_qbr = round(avg_qbr / bin_size) * bin_size,
             # min_exp_qbr = min(exp_qbr),
             # max_exp_qbr = max(exp_qbr),
@@ -183,7 +210,7 @@ show_calibration_chart(bin_size = 2.5)
 show_calibration_chart(bin_size = 5.0)
 
 # compose final model to save
-model_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = clean_model_data %>% select(-season, -label, -raw_qbr)),
+model_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = clean_model_data %>% select(-season, -label, -adj_qbr)),
     label = clean_model_data$label
 )
 xgb_qbr_model <- xgboost::xgboost(params = params, data = model_train, nrounds = nrounds, verbose = 2)
@@ -192,9 +219,9 @@ xgb.save(xgb_qbr_model, "./qbr_model.model")
 # add vars to model data and push csv
 model_data <- model_data %>%
     ungroup()
-model_data$exp_qbr <- matrix(predict(xgb_qbr_model, as.matrix(model_data %>% select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa))))
+model_data$exp_qbr <- matrix(predict(xgb_qbr_model, as.matrix(model_data %>% select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, spread))))
 
 model_data %>%
-    select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, raw_qbr, exp_qbr) %>%
+    select(season, week, athlete_name, team_abbreviation, opponent, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, spread, adj_qbr, exp_qbr) %>%
     rename(team = team_abbreviation) %>%
     write.csv("xqbr_xgb.csv")
