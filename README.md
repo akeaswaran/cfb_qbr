@@ -9,7 +9,7 @@ To use, just `cd` into the root directory of the repo and run `python qbr_scrape
 
 `qbr.R` has sample code to generate a GAM for QBR based on QB EPA (h/t [@guga31bb](https://github.com/guga31bb)).
 
-`qbr_xgb.R` has some code to generate an xgboost powered model to estimate ESPN's raw QBR scores. `xqbr_xgb.csv` has results for week-by-week expected QBR based on this XGBoost model.
+`qbr_xgb.R` has some code to generate an XGBoost powered model to estimate ESPN's opponent-adjusted QBR. `xqbr_xgb.csv` has results for week-by-week expected QBR based on this model.
 
 Big thanks to:
 
