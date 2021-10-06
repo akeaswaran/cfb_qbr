@@ -89,7 +89,6 @@ model_data <- qb_week %>%
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
-nrounds <- 45
 params <-
     list(
         booster = "gbtree",
@@ -104,38 +103,21 @@ params <-
     )
 
 clean_model_data <- model_data %>%
+    ungroup() %>%
+    group_by(season, opponent) %>%
     filter(
         !is.na(spread)
     ) %>%
     mutate(
-        label = adj_qbr
+        label = adj_qbr,
+        opponent = as.factor(as.numeric(cur_group_id()))
     ) %>%
     ungroup() %>%
     select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, opponent, era, spread, adj_qbr, label)
 
-actual_seasons <- min(clean_model_data$season):max(clean_model_data$season)
+actual_seasons <- sort(unique(clean_model_data$season))
+nrounds <- 45
 
-cv_results <- map_dfr(actual_seasons, function(x) {
-    test_data <- clean_model_data %>%
-        filter(season == x) %>%
-        select(-season, -opponent)
-    train_data <- clean_model_data %>%
-        filter(season != x) %>%
-        select(-season, -opponent)
-
-    full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -adj_qbr)),
-                                       label = train_data$label
-    )
-    xgb_model <- xgboost::xgboost(params = params, data = full_train, nrounds = nrounds, verbose = 2)
-
-    preds <- as.data.frame(
-        matrix(predict(xgb_model, as.matrix(test_data %>% select(-label, -adj_qbr))))
-    ) %>%
-        dplyr::rename(exp_qbr = V1)
-
-    cv_data <- bind_cols(test_data, preds) %>% mutate(season = x)
-    return(cv_data)
-})
 rsq <- function (x, y) {
     return(round(cor(x, y) ^ 2, 4))
 }
@@ -145,6 +127,29 @@ r2w <- function(y, y_pred, w) {
     xy = cbind(y, y_pred)
     return(boot::corr(d=xy, w=w) ^ 2)
 }
+
+cv_results <- map_dfr(actual_seasons, function(x) {
+    test_data <- clean_model_data %>%
+        filter(season == x) %>%
+        select(-season, -spread)
+    train_data <- clean_model_data %>%
+        filter(season != x) %>%
+        select(-season, -spread)
+
+    full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -adj_qbr)),
+                                       label = train_data$label
+    )
+    xgb_model <- xgboost::xgboost(params = params, data = full_train, nrounds = nrounds, verbose = 2)
+
+    preds <- as.data.frame(
+        matrix(predict(xgb_model, model.matrix(~ . + 0, data = test_data %>% select(-label, -adj_qbr))))
+    ) %>%
+        dplyr::rename(exp_qbr = V1)
+
+    cv_data <- bind_cols(test_data, preds) %>% mutate(season = x)
+    return(cv_data)
+})
+
 
 # ------ END XGB METHOD ------
 #
