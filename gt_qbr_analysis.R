@@ -1,6 +1,7 @@
 library(ggplot2)
 library(ggthemes)
 library(tidyverse)
+library(glue)
 
 qbr_csv <- read.csv("./composite_qbr.csv") %>%
     mutate(
