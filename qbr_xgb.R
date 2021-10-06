@@ -104,18 +104,19 @@ params <-
 
 clean_model_data <- model_data %>%
     ungroup() %>%
-    group_by(season, opponent) %>%
+    # group_by(season, opponent) %>%
     filter(
         !is.na(spread)
     ) %>%
     mutate(
         label = adj_qbr,
-        opponent = as.factor(as.numeric(cur_group_id()))
+        season = as.factor(season),
+        # opponent = as.factor(as.numeric(cur_group_id()))
     ) %>%
-    ungroup() %>%
-    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, opponent, era, spread, adj_qbr, label)
+    # ungroup() %>%
+    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, opponent, spread, era, adj_qbr, label)
+actual_seasons <- sort(unique(as.integer(model_data$season)))
 
-actual_seasons <- sort(unique(clean_model_data$season))
 nrounds <- 45
 
 rsq <- function (x, y) {
@@ -131,10 +132,10 @@ r2w <- function(y, y_pred, w) {
 cv_results <- map_dfr(actual_seasons, function(x) {
     test_data <- clean_model_data %>%
         filter(season == x) %>%
-        select(-season, -spread)
+        select(-era, -spread)
     train_data <- clean_model_data %>%
         filter(season != x) %>%
-        select(-season, -spread)
+        select(-era, -spread)
 
     full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -adj_qbr)),
                                        label = train_data$label
@@ -223,7 +224,11 @@ xgb_qbr_model <- xgboost::xgboost(params = params, data = model_train, nrounds =
 xgb.save(xgb_qbr_model, "./qbr_model.model")
 
 # add vars to model data and push csv
-model_data <- model_data %>%
+prep_model_data <- model_data %>%
+    ungroup() %>%
+    mutate(
+        opponent = as.factor(as.numeric(cur_group_id()))
+    )
     ungroup()
 model_data$exp_qbr <- matrix(predict(xgb_qbr_model, as.matrix(model_data %>% select(qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, spread))))
 
