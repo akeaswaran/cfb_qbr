@@ -118,10 +118,10 @@ actual_seasons <- min(clean_model_data$season):max(clean_model_data$season)
 cv_results <- map_dfr(actual_seasons, function(x) {
     test_data <- clean_model_data %>%
         filter(season == x) %>%
-        select(-season, -opponent, -era)
+        select(-season, -opponent)
     train_data <- clean_model_data %>%
         filter(season != x) %>%
-        select(-season, -opponent, -era)
+        select(-season, -opponent)
 
     full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -adj_qbr)),
                                        label = train_data$label
