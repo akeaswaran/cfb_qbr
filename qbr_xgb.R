@@ -89,7 +89,7 @@ model_data <- qb_week %>%
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
-nrounds <- 20
+nrounds <- 45
 params <-
     list(
         booster = "gbtree",
