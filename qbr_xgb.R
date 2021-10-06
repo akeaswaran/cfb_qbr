@@ -3,41 +3,33 @@ library(tidyverse)
 library(xgboost)
 library(glue)
 
-pbp <- data.frame()
-seasons <- 2014:2021
-progressr::with_progress({
-    future::plan("multisession")
-    pbp <- cfbfastR::load_cfb_pbp(seasons)
+seasons <- 2004:2020
+pbp <- purrr::map_df(seasons, function(x) {
+    # print(glue("loading data for year {x}"))
+    readRDS(
+        url(
+            glue::glue("https://raw.githubusercontent.com/saiemgilani/cfbfastR-data/master/pbp/rds/play_by_play_{x}.rds")
+        )
+    )
+    # print(glue("downloaded data for year {x}"))
 })
 
-spreads <- data.frame()
-for (yr in seasons) {
-    for (wk in 1:16) {
-        tmp <- cfbd_betting_lines(year = yr, week = wk)
-        spreads <- rbind(spreads, tmp)
-    }
-}
-
-spreads <- spreads %>%
-    group_by(game_id) %>%
-    mutate(
-        home_team_spread = -1 * as.double(spread)
-    ) %>%
-    filter(row_number()==1) %>%
-    ungroup() %>%
-    select(game_id, home_team_spread)
-
 cleaned <- pbp %>%
-    filter(!is.na(EPA) & !is.na(home_wp_before)) %>%
+    filter(!is.na(epa) & !is.na(home_wp_before) & !is.na(home_team_spread)) %>%
     filter(season %in% seasons) %>%
-    select(season, game_id, play_text, week, rush, pass, passer_player_name, rusher_player_name, EPA, home_wp_before, yards_gained, play_type, fumble_vec, penalty_flag, pass_attempt, sack_vec, home, away, pos_team) %>%
+    select(season, game_id, week, rush, pass, passer_player_name, rusher_player_name, epa, home_wp_before, fumble, penalty_flag, pass_attempt, sack_vec, home_team_name, home_team_id, away_team_name, away_team_id, posteam, home_team_spread) %>%
     mutate(
+        home = home_team_id,
+        away = away_team_id,
         home_wp = home_wp_before,
-        qbr_epa = if_else(EPA < -5.0, -5.0, EPA),
-        qbr_epa = if_else(fumble_vec == 1, -3.5, qbr_epa),
+        qbr_epa = case_when(
+            epa < -5.0 ~ -5.0,
+            (fumble == TRUE) ~ -3.5,
+            TRUE ~ epa
+        ),
         weight = if_else(home_wp < .1 | home_wp > .9, .6, 1),
         weight = if_else((home_wp >= .1 & home_wp < .2) | (home_wp >= .8 & home_wp < .9), .9, weight),
-        non_fumble_sack = ((sack_vec == 1) & (fumble_vec == 0)),
+        non_fumble_sack = ((sack_vec == 1) & (fumble == 0)),
         sack_epa = if_else(non_fumble_sack, qbr_epa, NaN),
         sack_weight = if_else(non_fumble_sack, weight, NaN),
         pass_epa = if_else((pass == 1), qbr_epa, NaN),
@@ -46,23 +38,18 @@ cleaned <- pbp %>%
         rush_weight = if_else((rush == 1), weight, NaN),
         pen_epa = if_else((penalty_flag == 1), qbr_epa, NaN),
         pen_weight = if_else((penalty_flag == 1), weight, NaN),
-        action_play = (EPA != 0),
+        action_play = (epa != 0),
         athlete_name = case_when(
             !is.na(passer_player_name) ~ passer_player_name,
             !is.na(rusher_player_name) ~ rusher_player_name,
             TRUE ~ "NA"
-        )
+        ),
+        home_team_spread = -1 * home_team_spread,
+        pos_team_spread = ifelse(home == posteam, home_team_spread, -1 * home_team_spread),
+        opponent = ifelse(home == posteam, away_team_name, home_team_name)
     )
 
-base_qb_week <- cleaned %>%
-    left_join(spreads, by = c('game_id' = 'game_id')) %>%
-    filter(!is.na(home_team_spread)) %>%
-    mutate(
-        pos_team_spread = ifelse(home == pos_team, home_team_spread, -1 * home_team_spread),
-        opponent = ifelse(home == pos_team, away, home)
-    )
-
-qb_week <- base_qb_week %>%
+qb_week <- cleaned %>%
     filter(athlete_name != "NA") %>%
     group_by(athlete_name, season, week) %>%
     summarize(
@@ -82,7 +69,14 @@ qb_week <- base_qb_week %>%
         sack_epa = replace_na(sack_epa, 0),
         pass_epa = replace_na(pass_epa, 0),
         rush_epa = replace_na(rush_epa, 0),
-        pen_epa = replace_na(pen_epa, 0)
+        pen_epa = replace_na(pen_epa, 0),
+        opponent = as.factor(opponent),
+        era = case_when(
+            season %in% 2002:2007 ~ 1,
+            season %in% 2008:2013 ~ 2,
+            season %in% 2014:2021 ~ 3
+        ),
+        era = as.factor(era)
     )
 
 qbr_scrape <- read.csv("./composite_qbr.csv") %>%
@@ -95,7 +89,7 @@ model_data <- qb_week %>%
 # ------ START XGB METHOD ------
 #
 # Params from nflfastR WP
-nrounds <- 25
+nrounds <- 20
 params <-
     list(
         booster = "gbtree",
@@ -110,17 +104,24 @@ params <-
     )
 
 clean_model_data <- model_data %>%
-    mutate(label = adj_qbr) %>%
+    filter(
+        !is.na(spread)
+    ) %>%
+    mutate(
+        label = adj_qbr
+    ) %>%
     ungroup() %>%
-    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, spread, adj_qbr, label)
+    select(season, qbr_epa, pass_epa, rush_epa, sack_epa, pen_epa, opponent, era, spread, adj_qbr, label)
 
-cv_results <- map_dfr(seasons, function(x) {
+actual_seasons <- min(clean_model_data$season):max(clean_model_data$season)
+
+cv_results <- map_dfr(actual_seasons, function(x) {
     test_data <- clean_model_data %>%
         filter(season == x) %>%
-        select(-season)
+        select(-season, -opponent, -era)
     train_data <- clean_model_data %>%
         filter(season != x) %>%
-        select(-season)
+        select(-season, -opponent, -era)
 
     full_train <- xgboost::xgb.DMatrix(model.matrix(~ . + 0, data = train_data %>% select(-label, -adj_qbr)),
                                        label = train_data$label
